@@ -170,17 +170,22 @@ class ASEthernetDevice:
     # suppressed for non-idempotent ones (aspirate/dispense) once bytes were sent.
     COMMAND_RETRIES = 5
     COMMAND_RETRY_DELAY = 0.3  # seconds between command re-issues
+    MIN_CONNECT_GAP_S = 0.3  # min time between closing one AS connection and opening the next
 
     def __init__(self, ip_address, buffersize=None, tcp_port=None):
         self.ip_address = str(ip_address)
         self.port = tcp_port if tcp_port else ASEthernetDevice.TCP_PORT
         self.buffersize = buffersize if buffersize else ASEthernetDevice.BUFFER_SIZE
+        self._last_close_time: float = 0.0
 
     async def _open_connection_with_retry(self):
         """Open the TCP connection, retrying the transient connect failures the AS
         produces on its port (ConnectionRefusedError / reset / timeout). Retried
         BEFORE any command bytes are sent, so it is side-effect free. Raises
         ConnectionError only after all attempts are exhausted."""
+        remaining = ASEthernetDevice.MIN_CONNECT_GAP_S - (time.monotonic() - self._last_close_time)
+        if remaining > 0:
+            await asyncio.sleep(remaining)
         last_exc: Exception | None = None
         for attempt in range(1, ASEthernetDevice.CONNECT_RETRIES + 1):
             try:
@@ -286,6 +291,7 @@ class ASEthernetDevice:
                     # NOT reliably catchable here. close() alone is enough -- the OS tears
                     # the socket down, and any teardown reset stays a background log line.
                     writer.close()
+                    self._last_close_time = time.monotonic()
         logger.error(
             f"No reply from device with IP {self.ip_address}:{self.port} after "
             f"{ASEthernetDevice.COMMAND_RETRIES} attempts"
