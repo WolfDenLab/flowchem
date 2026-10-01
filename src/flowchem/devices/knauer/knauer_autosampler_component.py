@@ -496,7 +496,13 @@ class AutosamplerInjectionValve(SixPortTwoPositionValve):
         Returns:
             str | int: The mapped position.
         """
-        position_mapping = {0: "LOAD", 1: "INJECT"}
+        # LOCAL HARDWARE QUIRK - DO NOT UPSTREAM / DO NOT INCLUDE IN A PR.
+        # 0/1 swapped vs the vendor InjectorValvePositions enum (LOAD=1,
+        # INJECT=0) to match how THIS machine's injection valve is wired/
+        # mounted. Unverified whether this is a universal mislabel or
+        # specific to this unit's physical installation - treat as local
+        # only until confirmed on another machine.
+        position_mapping = {0: "INJECT", 1: "LOAD"}
         if reverse:
             return str(
                 [
@@ -517,8 +523,8 @@ class AutosamplerInjectionValve(SixPortTwoPositionValve):
 
         Returns:
             position (str):
-                LOAD (position 0)
-                INJECT (position 1)
+                INJECT (position 0)
+                LOAD (position 1)
         """
         position = await self.hw_device.injector_valve_position(port=None)
         if position:
@@ -531,8 +537,8 @@ class AutosamplerInjectionValve(SixPortTwoPositionValve):
 
         Args:
             position (str):
-            LOAD (position 0)
-            INJECT (position 1)
+            INJECT (position 0)
+            LOAD (position 1)
         """
         try:
             success = await self.hw_device.injector_valve_position(port=position)
