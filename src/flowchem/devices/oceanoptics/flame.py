@@ -8,6 +8,7 @@ Windows note:
 
 import os
 import platform
+import struct
 import sys
 import sysconfig
 
@@ -18,6 +19,22 @@ from flowchem.devices.flowchem_device import FlowchemDevice
 from flowchem.devices.oceanoptics.flame_spectrometer import GeneralSensor
 from flowchem.utils.exceptions import InvalidConfigurationError
 from flowchem.utils.people import wei_hsin
+
+# OBP2 "Continuous Strobe Enable" message type (1-byte bool payload).
+# pyseabreeze implements the `continuous_strobe` feature only for the older
+# OOI-protocol device family (Flame-S/USB2000+); for OBP2-protocol devices
+# (Ocean SR2/SR4/SR6/HR2/HR4/HR6/ST) it is unimplemented
+# (seabreeze/pyseabreeze/features/{gpio,shutter}.py are stubs for every
+# device), and this message type is not in any public seabreeze/OBP spec we
+# could find. Recovered from Ocean Insight's own OmniDriver (bundled inside
+# OceanView as com-oceanoptics-omnidriver.jar): its
+# ContinuousStrobeEnableCommandV2.class constructor does
+# `super(6147)` (JVM `sipush 6147` immediately followed by
+# `invokespecial OBPCommandImplV2.<init>(I)V`, read directly from the
+# compiled bytecode) where 6147 == 0x00001803. Undocumented/reverse-engineered
+# from this shipped binary, not from a published Ocean Insight spec -
+# confirm against real hardware behavior before trusting it unattended.
+_OBP2_CONTINUOUS_STROBE_ENABLE_MSG_TYPE = 0x00001803
 
 try:
     import seabreeze
@@ -211,22 +228,52 @@ class FlameOptical(FlowchemDevice):
     async def get_trigger_mode(self):
         return self.trigger_mode_value
 
-    async def set_lamp_enable(self, enable: bool):
-        """Drive the spectrometer's Lamp Enable line (continuous strobe feature).
+    def _set_lamp_enable_obp2_fallback(self, enable: bool) -> None:
+        """Send the raw OBP2 continuous-strobe-enable message directly.
 
-        On Flame-series/USB2000+-family spectrometers this is a TTL output on
-        the accessory connector (J2 pin 4) meant for gating an external light
-        source or shutter - independent of `power_on`/`power_off`, which only
-        open/close the USB connection to the spectrometer itself.
+        Reaches into pyseabreeze's private `_dev._transport.protocol` handle
+        (same category of "no public API for this today" as
+        `run_lifecycle.tag_platform_with_run_id` in FlowArray) because
+        `Spectrometer`/`SeaBreezeDevice` expose no public way to send a raw
+        OBP message. `protocol.msgs` is a per-protocol-class dict the
+        pyseabreeze maintainers explicitly invite extending ("add more here
+        if you implement new features" in protocol.py) - this registers the
+        missing message type into it once, then sends it.
         """
         try:
-            self.spectrometer.f.continuous_strobe.set_enable(bool(enable))
+            protocol = self.spectrometer._dev._transport.protocol
         except AttributeError as exc:
             raise RuntimeError(
                 "This Ocean Optics device/backend does not support lamp "
                 "enable (continuous strobe) control."
             ) from exc
-        self.lamp_enabled = bool(enable)
+        if not hasattr(protocol, "msgs") or not hasattr(protocol, "send"):
+            raise RuntimeError(
+                "This Ocean Optics device/backend does not support lamp "
+                "enable (continuous strobe) control."
+            )
+        msg_type = _OBP2_CONTINUOUS_STROBE_ENABLE_MSG_TYPE
+        if msg_type not in protocol.msgs:
+            protocol.msgs[msg_type] = struct.Struct("<B").pack
+        protocol.send(msg_type, (1 if enable else 0,))
+
+    async def set_lamp_enable(self, enable: bool):
+        """Drive the spectrometer's Lamp Enable line (continuous strobe feature).
+
+        This is a TTL output on the spectrometer's accessory connector meant
+        for gating an external light source or shutter - independent of
+        `power_on`/`power_off`, which only open/close the USB connection to
+        the spectrometer itself. pyseabreeze implements this natively for
+        the Flame-S/USB2000+ device family; for OBP2-protocol devices
+        (Ocean SR/HR/ST series) it falls back to a raw OBP message pyseabreeze
+        hasn't wired up yet - see `_set_lamp_enable_obp2_fallback`.
+        """
+        enable = bool(enable)
+        try:
+            self.spectrometer.f.continuous_strobe.set_enable(enable)
+        except AttributeError:
+            self._set_lamp_enable_obp2_fallback(enable)
+        self.lamp_enabled = enable
         return self.lamp_enabled
 
     async def get_lamp_enable(self):
