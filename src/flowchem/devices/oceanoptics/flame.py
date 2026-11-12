@@ -109,6 +109,7 @@ class FlameOptical(FlowchemDevice):
         self.backend = _select_backend(backend)
         self.scans_to_average = 1
         self.trigger_mode_value: int | None = None
+        self.lamp_enabled: bool | None = None
         super().__init__(name)
 
         self.device_info.authors = [wei_hsin]
@@ -209,3 +210,24 @@ class FlameOptical(FlowchemDevice):
 
     async def get_trigger_mode(self):
         return self.trigger_mode_value
+
+    async def set_lamp_enable(self, enable: bool):
+        """Drive the spectrometer's Lamp Enable line (continuous strobe feature).
+
+        On Flame-series/USB2000+-family spectrometers this is a TTL output on
+        the accessory connector (J2 pin 4) meant for gating an external light
+        source or shutter - independent of `power_on`/`power_off`, which only
+        open/close the USB connection to the spectrometer itself.
+        """
+        try:
+            self.spectrometer.f.continuous_strobe.set_enable(bool(enable))
+        except AttributeError as exc:
+            raise RuntimeError(
+                "This Ocean Optics device/backend does not support lamp "
+                "enable (continuous strobe) control."
+            ) from exc
+        self.lamp_enabled = bool(enable)
+        return self.lamp_enabled
+
+    async def get_lamp_enable(self):
+        return self.lamp_enabled

@@ -24,6 +24,8 @@ class GeneralSensor(PhotoSensor):
         )
         self.add_api_route("/get-trigger-mode", self.get_trigger_mode, methods=["GET"])
         self.add_api_route("/set-trigger-mode", self.set_trigger_mode, methods=["PUT"])
+        self.add_api_route("/get-lamp-enable", self.get_lamp_enable, methods=["GET"])
+        self.add_api_route("/set-lamp-enable", self.set_lamp_enable, methods=["PUT"])
 
     async def acquire_signal(self, absolute: bool = True) -> list:
         return await self.hw_device.get_intensity(
@@ -48,6 +50,12 @@ class GeneralSensor(PhotoSensor):
 
     async def set_trigger_mode(self, mode: int):
         return await self.hw_device.set_trigger_mode(mode)
+
+    async def get_lamp_enable(self):
+        return await self.hw_device.get_lamp_enable()
+
+    async def set_lamp_enable(self, enable: bool):
+        return await self.hw_device.set_lamp_enable(enable)
 
     async def power_on(self):
         return await self.hw_device.power_on()
