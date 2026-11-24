@@ -144,3 +144,6 @@ dmypy.json
 
 .flowchem-sim/
 __script/
+command_log.db
+command_log.db-shm
+command_log.db-wal

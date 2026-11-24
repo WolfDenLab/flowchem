@@ -549,6 +549,11 @@ class AutosamplerInjectionValve(SixPortTwoPositionValve):
         except KeyError as e:
             raise Exception(f"Please give allowed positions {[pos.name for pos in InjectorValvePositions]}") from e  # type: ignore
 
+    async def is_idle(self) -> bool:
+        """Check whether the injection valve has finished switching."""
+        status = await self.hw_device.get_status()
+        return status != "INJECTION_VALVE_RUNNING"
+
 
 class AutosamplerSyringeValve(FourPortDistributionValve):
     """
